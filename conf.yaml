@@ -1,0 +1,8 @@
+ignore : 
+  - .git
+  - target
+
+accept : 
+  - py
+  - yaml
+  - rs
