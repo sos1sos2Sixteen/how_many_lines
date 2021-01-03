@@ -3,8 +3,6 @@
 extern crate regex;
 extern crate yaml_rust;
 use yaml_rust::YamlLoader;
-use yaml_rust::Yaml;
-
 use regex::Regex;
 use std::fs;
 use std::env;
@@ -37,21 +35,26 @@ impl Config {
             .expect("error parsing config yaml");
         let ydoc = loaded_docs.get(0).unwrap();
 
-        fn extract_and_join(xs : &Vec<Yaml>, sep : &str) -> String{
-            xs.iter()
-            .map(|y|{y.as_str()})
-            .filter(|opt|{match opt {Some(_) => true, _ => false}})
-            .map(|opt|{opt.unwrap()})
-            .collect::<Vec<&str>>()
-            .join(sep)
-        }
         
         // 2. construct appropriate conifg struct
         let ignore_list = ydoc["ignore"].as_vec().expect("fuck you no ignore!");
         let ext_list = ydoc["accept"].as_vec().expect("fuck you no accept!");
 
-        let ignore_pattern = extract_and_join(ignore_list, "|");    
-        let ext_pattern = format!("[\\S]+({})$", extract_and_join(ext_list, "|"));
+        let ignore_pattern = ignore_list.iter()
+            .map(|y|{y.as_str()})
+            .filter(|opt|{match opt {Some(_) => true, _ => false}})
+            .map(|opt|{opt.unwrap()})
+            .collect::<Vec<&str>>()
+            .join("|");
+
+        let expanded_exts = ext_list.iter()
+            .map(|y|{y.as_str()})
+            .filter(|opt|{match opt {Some(_) => true, _ => false}})
+            .map(|opt|{format!("\\.{}", opt.unwrap())})
+            .collect::<Vec<String>>()
+            .join("|");
+
+        let ext_pattern = format!("[\\S]+({})$", expanded_exts);
 
         
         Config{
