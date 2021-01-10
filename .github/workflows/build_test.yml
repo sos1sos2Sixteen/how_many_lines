@@ -19,5 +19,5 @@ jobs:
           
       - uses: actions/upload-artifact@v2
         with:
-          name: ubuntu_release_file
-          path: D:\a\how_many_lines\how_many_lines
+          name: win_release
+          path: target\release\how_many_lines.exe
