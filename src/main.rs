@@ -117,9 +117,7 @@ fn indent_print(message : &str, indent_level : u32, indent_character : char) {
 
 fn traverse_directory<T:Journal>(root_dir_name : &str, depth : u32, config : &Config, journal : &mut T, skip_record : &mut Vec<String>) {
     let root_dir = fs::read_dir(root_dir_name).unwrap();
-    let (lower,upper) = root_dir.size_hint();
     let mut continuous_miss_count = 0;
-    println!("{} : ({}~{:?})", root_dir_name, lower, upper);
     for entry in root_dir {
         if let Ok(item) = entry {
             let filepath = item.path();
@@ -135,7 +133,8 @@ fn traverse_directory<T:Journal>(root_dir_name : &str, depth : u32, config : &Co
                     } else {
                         continuous_miss_count += 1;
                         if continuous_miss_count >= config.skip_threshold {
-                            skip_record.push(String::from(root_dir_name))
+                            skip_record.push(String::from(root_dir_name));
+                            return;
                         }
                     }
                 }
