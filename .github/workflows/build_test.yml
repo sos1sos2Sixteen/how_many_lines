@@ -1,11 +1,11 @@
 on: [push]
 
-name: CI
+name: build for windows
 
 jobs:
   build_and_test:
-    name: Rust project
-    runs-on: ubuntu-latest
+    name: build rust for release
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
