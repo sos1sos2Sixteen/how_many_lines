@@ -6,6 +6,7 @@ use yaml_rust::YamlLoader;
 use regex::Regex;
 use std::fs;
 use std::env;
+use std::path;
 
 #[derive(Debug)]
 struct Config {
@@ -38,16 +39,18 @@ impl Config {
 
         
         // 2. construct appropriate conifg struct
-        let ignore_list = ydoc["ignore"].as_vec().expect("fuck you no ignore!");
+        let ignore_list = ydoc["ignore"].as_vec();
+        let ignore_pattern = match ignore_list {
+            Some(v) => v.iter()
+                    .map(|y|{y.as_str()})
+                    .filter(|opt|{match opt {Some(_) => true, _ => false}})
+                    .map(|opt|{opt.unwrap()})
+                    .collect::<Vec<&str>>()
+                    .join("|"),
+            _ => String::from("$a")     // a regex that will never be matched to anything
+        };
+
         let ext_list = ydoc["accept"].as_vec().expect("fuck you no accept!");
-
-        let ignore_pattern = ignore_list.iter()
-            .map(|y|{y.as_str()})
-            .filter(|opt|{match opt {Some(_) => true, _ => false}})
-            .map(|opt|{opt.unwrap()})
-            .collect::<Vec<&str>>()
-            .join("|");
-
         let expanded_exts = ext_list.iter()
             .map(|y|{y.as_str()})
             .filter(|opt|{match opt {Some(_) => true, _ => false}})
@@ -147,11 +150,13 @@ fn traverse_directory<T:Journal>(root_dir_name : &str, depth : u32, config : &Co
 fn main() {
 
     let home_dir = match env::var("HOME") {
-        Ok(s) => s,
-        _ => String::from(".")
+        Ok(s) => path::PathBuf::from(s),
+        _ => path::PathBuf::from(".")
     };
 
-    let config = Config::new(&format!("{}/.howmany_conf.yaml", home_dir));
+
+    let conf_filename = path::Path::new(".howmany_conf.yaml");
+    let config = Config::new(home_dir.join(conf_filename).to_str().unwrap());
     println!("{:?}", config);
     let mut lc = LineCounter::new();
     let mut skip_record = Vec::<String>::new();
