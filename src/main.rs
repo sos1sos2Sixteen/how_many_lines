@@ -8,6 +8,24 @@ use std::fs;
 use std::env;
 use std::path;
 
+/// default configure file, could be overriden (completely) by a .howmany_conf.yaml 
+static DEFAULT_CONFIG : &str = "
+ignore : 
+
+accept : 
+  - py
+  - yaml
+  - rs
+  - c
+  - h
+  - cpp
+  - hpp
+  - java
+  - cu
+
+skip_threshold : 
+";
+
 #[derive(Debug)]
 struct Config {
     ignores : Regex,
@@ -26,13 +44,21 @@ struct LineCounter {
     per_file_log : Vec<(String, i32)>
 }
 
+
 impl Config {
 
+    /// load and parse given config file, if the given file could not be opened, switch to the default file
     fn new(filename : &str) -> Config {
 
         // 1. read and parse yaml config file
-        let contents = fs::read_to_string(filename)
-            .expect(&format!("unable to read config file : {}", filename));
+        let contents = match fs::read_to_string(filename) {
+            Ok(ctt) => ctt,
+            _ => {
+                println!("unable to read config file : {}, switch to default", filename);
+                String::from(DEFAULT_CONFIG)
+            }
+
+        };
         let loaded_docs = YamlLoader::load_from_str(contents.as_str())
             .expect("error parsing config yaml");
         let ydoc = loaded_docs.get(0).unwrap();
@@ -84,6 +110,7 @@ impl LineCounter {
     }
 }
 
+
 impl Journal for LineCounter {
     fn observe(&mut self, fpath : std::path::PathBuf) -> () {
         if let Ok(content) = fs::read_to_string(&fpath) {
@@ -102,7 +129,7 @@ impl Journal for LineCounter {
         for (file_name, line_count) in &self.per_file_log {
             println!("* {} \t lines of {}", line_count, file_name);
         }
-        println!("summary for line counter : total line : {}", self.total_line);
+        println!("summary for line counter : total : {} lines from {} files", self.total_line, self.per_file_log.len());
     }
 }
 
@@ -149,19 +176,33 @@ fn traverse_directory<T:Journal>(root_dir_name : &str, depth : u32, config : &Co
 
 fn main() {
 
+    // locate potential config file
     let home_dir = match env::var("HOME") {
         Ok(s) => path::PathBuf::from(s),
         _ => path::PathBuf::from(".")
     };
-
-
     let conf_filename = path::Path::new(".howmany_conf.yaml");
     let config = Config::new(home_dir.join(conf_filename).to_str().unwrap());
-    println!("{:?}", config);
+
+    // locate potential program argument
+    let args = env::args().collect::<Vec<String>>();
+    if args.len() == 2 {
+        // if a argmument is provided, treat it as a target dir
+
+    }
+
+    
+    let root_traverse_dir = match args.get(1) {
+        Some(tgt) => tgt.clone(),
+        None => String::from(".")
+    };
+
+    // perform count
     let mut lc = LineCounter::new();
     let mut skip_record = Vec::<String>::new();
-    traverse_directory(".", 0, &config, &mut lc, &mut skip_record);
+    traverse_directory(&root_traverse_dir, 0, &config, &mut lc, &mut skip_record);
 
+    // output summary
     if skip_record.len() > 0 {
         println!("the following directories are automatically skipped due to large miss rates :");
         for skipped in skip_record {
