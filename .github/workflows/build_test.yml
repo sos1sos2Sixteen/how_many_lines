@@ -1,11 +1,11 @@
 on: [push]
 
-name: CI
+name: build for windows
 
 jobs:
   build_and_test:
-    name: Rust project
-    runs-on: ubuntu-latest
+    name: build rust for release
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -15,3 +15,9 @@ jobs:
         with:
           command: build
           args: --release --all-features
+      - run: tree /F
+          
+      - uses: actions/upload-artifact@v2
+        with:
+          name: win_release
+          path: target\release\how_many_lines.exe
