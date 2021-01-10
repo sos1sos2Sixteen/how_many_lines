@@ -15,9 +15,9 @@ jobs:
         with:
           command: build
           args: --release --all-features
-      - run: tree \F
+      - run: tree /F
           
       - uses: actions/upload-artifact@v2
         with:
           name: ubuntu_release_file
-          path: target\release\how_many_lines
+          path: D:\a\how_many_lines\how_many_lines
