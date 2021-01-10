@@ -10,7 +10,8 @@ use std::env;
 #[derive(Debug)]
 struct Config {
     ignores : Regex,
-    accept : Regex
+    accept : Regex,
+    skip_threshold : i32
 }
 
 trait Journal {
@@ -56,10 +57,17 @@ impl Config {
 
         let ext_pattern = format!("[\\S]+({})$", expanded_exts);
 
+        // 3. read skip thresh
+        let skip_threshold = match ydoc["skip_threshold"].as_i64() {
+            Some(st) => st as i32, 
+            None => 100
+        };
+
         
         Config{
             ignores : Regex::new(&ignore_pattern).expect("error compiling pattern [ignores]"),
-            accept : Regex::new(&ext_pattern).expect("error compiling pattern [accept]")
+            accept : Regex::new(&ext_pattern).expect("error compiling pattern [accept]"),
+            skip_threshold
         }
     }
 }
@@ -107,18 +115,29 @@ fn indent_print(message : &str, indent_level : u32, indent_character : char) {
 
 
 
-fn traverse_directory<T:Journal>(root_dir : &str, depth : u32, config : &Config, journal : &mut T) {
-    let root_dir = fs::read_dir(root_dir).unwrap();
+fn traverse_directory<T:Journal>(root_dir_name : &str, depth : u32, config : &Config, journal : &mut T, skip_record : &mut Vec<String>) {
+    let root_dir = fs::read_dir(root_dir_name).unwrap();
+    let (lower,upper) = root_dir.size_hint();
+    let mut continuous_miss_count = 0;
+    println!("{} : ({}~{:?})", root_dir_name, lower, upper);
     for entry in root_dir {
         if let Ok(item) = entry {
             let filepath = item.path();
             let filename = filepath.file_name().unwrap().to_str().unwrap();
             if let Ok(ftype) = item.file_type() {
                 if ftype.is_dir() && !(config.ignores.is_match(filename)){
-                    traverse_directory(item.path().to_str().unwrap(), depth + 1, config, journal);
-                } else if ftype.is_file() && config.accept.is_match(filename){
-                    // println!("matched a file : {}", filename);
-                    journal.observe(item.path());
+                    traverse_directory(item.path().to_str().unwrap(), depth + 1, config, journal, skip_record);
+                } else if ftype.is_file(){
+                    if config.accept.is_match(filename){
+                        // println!("matched a file : {}", filename);
+                        journal.observe(item.path());
+                        continuous_miss_count = 0;
+                    } else {
+                        continuous_miss_count += 1;
+                        if continuous_miss_count >= config.skip_threshold {
+                            skip_record.push(String::from(root_dir_name))
+                        }
+                    }
                 }
             }
         }   
@@ -136,6 +155,14 @@ fn main() {
     let config = Config::new(&format!("{}/.howmany_conf.yaml", home_dir));
     println!("{:?}", config);
     let mut lc = LineCounter::new();
-    traverse_directory(".", 0, &config, &mut lc);
+    let mut skip_record = Vec::<String>::new();
+    traverse_directory(".", 0, &config, &mut lc, &mut skip_record);
+
+    if skip_record.len() > 0 {
+        println!("the following directories are automatically skipped due to large miss rates :");
+        for skipped in skip_record {
+            println!("* {}", skipped);
+        }
+    }
     lc.summary();
 }
