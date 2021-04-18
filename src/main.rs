@@ -11,6 +11,7 @@ use std::ops::Range;
 use std::path;
 use std::{collections::HashMap, fs, process::exit};
 use yaml_rust::YamlLoader;
+use rayon::prelude::*;
 
 /// default configure file, could be overriden (completely) by a .howmany_conf.yaml
 static DEFAULT_CONFIG: &str = "
@@ -50,10 +51,55 @@ struct LineCounter {
 
 struct TodoItem {
     tag_idx: Range<usize>,
-    content_idx : Range<usize>,
+    content_idx: Range<usize>,
     source_loc: String,
     line: String,
 }
+
+struct CollectJournal{
+    codes : Vec<String>
+}
+impl CollectJournal{
+    fn new() -> Self{
+        CollectJournal{
+            codes : vec![]
+        }
+    }
+}
+impl Journal for CollectJournal {
+    fn observe(&mut self, fpath: std::path::PathBuf) -> () {
+        self.codes.push(String::from(fpath.to_str().unwrap()));
+    }
+    fn summary(&mut self) -> () {
+        let mut odd:Vec<(&String, usize)> = self.codes.par_iter().map(|path|{
+            if let Ok(content) = fs::read_to_string(path) {
+                let mut local_line = 0;
+                for _ in content.split('\n') {
+                    local_line += 1;
+                }
+                (path, local_line)
+            }else{
+                (path, 0)
+            }
+        }).filter(|(_, lc)|{*lc > 0}).collect();
+
+        odd.par_sort_by_key(|(_,lc)|{*lc});
+
+        let total_count = odd.par_iter()
+            .map(|(_,lc)|{*lc})
+            .reduce(||{0}, |a,b|{a+b});
+
+        for (file_name, line_count) in &odd {
+            println!("* {} \t lines of {}", line_count, file_name);
+        }
+        println!(
+            "summary for line counter : total : {} lines from {} files",
+            total_count,
+            odd.len()
+        );
+    }
+}
+
 struct TodoCatcher {
     todos: Vec<TodoItem>,
 }
@@ -99,10 +145,10 @@ impl Journal for TodoCatcher {
         }
     }
     fn summary(&mut self) -> () {
-        let mut tag_mapped : HashMap::<String, Vec<&TodoItem>> = HashMap::new();
+        let mut tag_mapped: HashMap<String, Vec<&TodoItem>> = HashMap::new();
         for item in self.todos.iter() {
             let key = item.line.get(item.tag_idx.clone()).unwrap();
-            if ! tag_mapped.contains_key(key) {
+            if !tag_mapped.contains_key(key) {
                 tag_mapped.insert(key.to_string(), Vec::new());
             }
             tag_mapped.get_mut(key).unwrap().push(item)
@@ -110,11 +156,19 @@ impl Journal for TodoCatcher {
 
         for key in tag_mapped.keys() {
             println!("# tag : {} : ", key);
-            for item in tag_mapped.get(key).unwrap(){
-                println!("\t[ ] {} @ {}", item.line.get(item.content_idx.clone()).unwrap(), item.source_loc);
+            for item in tag_mapped.get(key).unwrap() {
+                println!(
+                    "\t[ ] {} @ {}",
+                    item.line.get(item.content_idx.clone()).unwrap(),
+                    item.source_loc
+                );
             }
         }
-        println!("gathered in total {} todos in {} tags", self.todos.len(), tag_mapped.keys().len());
+        println!(
+            "gathered in total {} todos in {} tags",
+            self.todos.len(),
+            tag_mapped.keys().len()
+        );
     }
 }
 
@@ -215,7 +269,7 @@ impl Journal for LineCounter {
     }
 }
 
-// TODO[shiyao] : do this and that 
+// TODO[shiyao] : do this and that
 fn indent_print(message: &str, indent_level: u32, indent_character: char) {
     let mut indent_printed = 0;
     while indent_printed < indent_level {
@@ -271,26 +325,17 @@ fn print_help_and_die() -> ! {
     println!("\t$ howmanylines line|todo|help [DIR]");
     println!("\t* line : count lines");
     println!("\t* todo : gather todos");
+    println!("\t* parl : for a line-counter in parallel");
     println!("\t* help : print this message");
     println!("\t optional DIR, the root dir from which the program starts scan");
 
     exit(0)
 }
 
-fn run_journal<J: Journal>(
-    root_traverse_dir: &str,
-    config: &Config,
-    journal: &mut J,
-) -> () {
+fn run_journal<J: Journal>(root_traverse_dir: &str, config: &Config, journal: &mut J) -> () {
     // perform count
     let mut skip_record = Vec::<String>::new();
-    traverse_directory(
-        &root_traverse_dir,
-        0,
-        config,
-        journal,
-        &mut skip_record,
-    );
+    traverse_directory(&root_traverse_dir, 0, config, journal, &mut skip_record);
 
     // output summary
     if skip_record.len() > 0 {
@@ -314,7 +359,7 @@ fn main() {
         Some(tgt) => tgt.clone(),
         None => String::from("."),
     };
-    
+
     // locate potential config file
     let home_dir = match env::var("HOME") {
         Ok(s) => path::PathBuf::from(s),
@@ -322,15 +367,15 @@ fn main() {
     };
     let conf_filename = path::Path::new(".howmany_conf.yaml");
     let config = Config::new(home_dir.join(conf_filename).to_str().unwrap());
-    
+
     match args.get(1).unwrap().as_str() {
         "line" => run_journal(&root_traverse_dir, &config, &mut LineCounter::new()),
         "todo" => run_journal(&root_traverse_dir, &config, &mut TodoCatcher::new()),
+        "parl" => run_journal(&root_traverse_dir, &config, &mut CollectJournal::new()),
         "help" => print_help_and_die(),
         other => {
             println!("sub-command {} not recognized!", other);
             print_help_and_die()
         }
     };
-
 }
