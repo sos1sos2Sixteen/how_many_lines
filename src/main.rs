@@ -5,13 +5,14 @@ extern crate regex;
 extern crate yaml_rust;
 #[macro_use]
 extern crate lazy_static;
+use colored::Colorize;
+use rayon::prelude::*;
 use regex::Regex;
 use std::env;
 use std::ops::Range;
 use std::path;
 use std::{collections::HashMap, fs, process::exit};
 use yaml_rust::YamlLoader;
-use rayon::prelude::*;
 
 /// default configure file, could be overriden (completely) by a .howmany_conf.yaml
 static DEFAULT_CONFIG: &str = "
@@ -56,14 +57,12 @@ struct TodoItem {
     line: String,
 }
 
-struct CollectJournal{
-    codes : Vec<String>
+struct CollectJournal {
+    codes: Vec<String>,
 }
-impl CollectJournal{
-    fn new() -> Self{
-        CollectJournal{
-            codes : vec![]
-        }
+impl CollectJournal {
+    fn new() -> Self {
+        CollectJournal { codes: vec![] }
     }
 }
 impl Journal for CollectJournal {
@@ -71,31 +70,38 @@ impl Journal for CollectJournal {
         self.codes.push(String::from(fpath.to_str().unwrap()));
     }
     fn summary(&mut self) -> () {
-        let mut odd:Vec<(&String, usize)> = self.codes.par_iter().map(|path|{
-            if let Ok(content) = fs::read_to_string(path) {
-                let mut local_line = 0;
-                for _ in content.split('\n') {
-                    local_line += 1;
+        let mut odd: Vec<(&String, usize)> = self
+            .codes
+            .par_iter()
+            .map(|path| {
+                if let Ok(content) = fs::read_to_string(path) {
+                    let mut local_line = 0;
+                    for _ in content.split('\n') {
+                        local_line += 1;
+                    }
+                    (path, local_line)
+                } else {
+                    (path, 0)
                 }
-                (path, local_line)
-            }else{
-                (path, 0)
-            }
-        }).filter(|(_, lc)|{*lc > 0}).collect();
+            })
+            .filter(|(_, lc)| *lc > 0)
+            .collect();
 
-        odd.par_sort_by_key(|(_,lc)|{*lc});
+        odd.par_sort_by_key(|(_, lc)| *lc);
 
-        let total_count = odd.par_iter()
-            .map(|(_,lc)|{*lc})
-            .reduce(||{0}, |a,b|{a+b});
+        let total_count = odd.par_iter().map(|(_, lc)| *lc).reduce(|| 0, |a, b| a + b);
 
         for (file_name, line_count) in &odd {
-            println!("* {} \t lines of {}", line_count, file_name);
+            println!("* {} \t lines of {}", format!("{}", line_count).bold(), file_name);
         }
+
         println!(
-            "summary for line counter : total : {} lines from {} files",
-            total_count,
-            odd.len()
+            "{}",
+            format!(
+                "summary for parallel line counter : total : {} lines from {} files",
+                total_count,
+                odd.len()
+            ).bold().green()
         );
     }
 }
@@ -129,7 +135,7 @@ impl Journal for TodoCatcher {
                     tag_idx,
                     content_idx,
                     source_loc: format!("{}:{}", fpath.to_str().unwrap(), line_no),
-                    line
+                    line,
                 })
             } else {
                 None
@@ -155,11 +161,12 @@ impl Journal for TodoCatcher {
         }
 
         for key in tag_mapped.keys() {
-            println!("# tag : {} : ", key);
+            println!("{}", format!("# tag : {} : ", key.black()).black().on_yellow());
             for item in tag_mapped.get(key).unwrap() {
                 println!(
-                    "\t[ ] {} @ {}",
-                    item.line.get(item.content_idx.clone()).unwrap(),
+                    "[ ] {} {} {}",
+                    item.line.get(item.content_idx.clone()).unwrap().bold(),
+                    "@".blue().italic(),
                     item.source_loc
                 );
             }
@@ -186,8 +193,8 @@ impl Config {
                 String::from(DEFAULT_CONFIG)
             }
         };
-        let loaded_docs =
-            YamlLoader::load_from_str(contents.as_str()).expect("error parsing config yaml");
+        let loaded_docs = YamlLoader::load_from_str(contents.as_str())
+            .expect(&format!("{}", "error parsing config yaml".red()));
         let ydoc = loaded_docs.get(0).unwrap();
 
         // 2. construct appropriate conifg struct
@@ -206,7 +213,9 @@ impl Config {
             _ => String::from("$a"), // a regex that will never be matched to anything
         };
 
-        let ext_list = ydoc["accept"].as_vec().expect("fuck you no accept!");
+        let ext_list = ydoc["accept"]
+            .as_vec()
+            .expect(&format!("{}", "expected key `accept` not present!".red()));
         let expanded_exts = ext_list
             .iter()
             .map(|y| y.as_str())
@@ -227,8 +236,10 @@ impl Config {
         };
 
         Config {
-            ignores: Regex::new(&ignore_pattern).expect("error compiling pattern [ignores]"),
-            accept: Regex::new(&ext_pattern).expect("error compiling pattern [accept]"),
+            ignores: Regex::new(&ignore_pattern)
+                .expect(&format!("{}", "error compiling pattern [ignores]".red())),
+            accept: Regex::new(&ext_pattern)
+                .expect(&format!("{}", "error compiling pattern [accept]".red())),
             skip_threshold,
         }
     }
@@ -259,12 +270,15 @@ impl Journal for LineCounter {
     fn summary(&mut self) -> () {
         self.per_file_log.sort_by(|a, b| a.1.cmp(&b.1));
         for (file_name, line_count) in &self.per_file_log {
-            println!("* {} \t lines of {}", line_count, file_name);
+            println!("* {} \t lines of {}", format!("{}", line_count).bold(), file_name);
         }
         println!(
-            "summary for line counter : total : {} lines from {} files",
-            self.total_line,
-            self.per_file_log.len()
+            "{}",
+            format!(
+                "summary for line counter : total : {} lines from {} files",
+                self.total_line,
+                self.per_file_log.len()
+            ).bold().green()
         );
     }
 }
@@ -339,11 +353,11 @@ fn run_journal<J: Journal>(root_traverse_dir: &str, config: &Config, journal: &m
 
     // output summary
     if skip_record.len() > 0 {
-        println!("the following directories are automatically skipped due to large miss rates :");
-        for skipped in skip_record {
+        println!("{}", "the following directories are automatically skipped due to large miss rates :");
+        for skipped in &skip_record {
             println!("* {}", skipped);
         }
-        println!("------------------------")
+        println!("{}", "------------------------".blue())
     }
     journal.summary();
 }
@@ -374,7 +388,7 @@ fn main() {
         "parl" => run_journal(&root_traverse_dir, &config, &mut CollectJournal::new()),
         "help" => print_help_and_die(),
         other => {
-            println!("sub-command {} not recognized!", other);
+            println!("{}", format!("sub-command {} not recognized!", other).red());
             print_help_and_die()
         }
     };
