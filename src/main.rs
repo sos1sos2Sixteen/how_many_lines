@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-#![feature(never_type)]
+// #![feature(never_type)]
 
 extern crate regex;
 extern crate yaml_rust;
@@ -333,7 +333,7 @@ fn traverse_directory<T: Journal>(
     }
 }
 
-fn print_help_and_die() -> ! {
+fn print_help_and_die() -> () {
     println!("sixteen's howmanylines.");
     println!("usage : ");
     println!("\t$ howmanylines line|todo|help [DIR]");
